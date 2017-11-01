@@ -240,6 +240,7 @@ static void uart_irq(int id)
     if (serial_irq_ids[id] != 0) {
         if (__HAL_UART_GET_FLAG(huart, UART_FLAG_TXE) != RESET) {
             if (__HAL_UART_GET_IT(huart, UART_IT_TXE) != RESET) {
+                huart->Instance->ICR = 0x01<<6;
                 irq_handler(serial_irq_ids[id], TxIrq);
             }
         }
