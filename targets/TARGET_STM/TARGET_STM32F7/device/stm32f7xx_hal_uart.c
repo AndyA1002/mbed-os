@@ -879,7 +879,7 @@ HAL_StatusTypeDef HAL_UART_Transmit_IT(UART_HandleTypeDef *huart, uint8_t *pData
     __HAL_UNLOCK(huart);
 
     /* Enable the UART Transmit Data Register Empty Interrupt */
-    SET_BIT(huart->Instance->CR1, USART_CR1_TXEIE);
+    SET_BIT(huart->Instance->CR1, USART_CR1_TCIE);
 
     return HAL_OK;
   }
@@ -1319,6 +1319,7 @@ void HAL_UART_IRQHandler(UART_HandleTypeDef *huart)
   /* UART in mode Transmitter (transmission end) -----------------------------*/
   if(((isrflags & USART_ISR_TC) != RESET) && ((cr1its & USART_CR1_TCIE) != RESET))
   {
+    huart->Instance->ICR = USART_ICR_TCCF;
     UART_EndTransmit_IT(huart);
     return;
   }
@@ -1345,7 +1346,7 @@ HAL_StatusTypeDef UART_WaitOnFlagUntilTimeout(UART_HandleTypeDef *huart, uint32_
       if((Timeout == 0U)||((HAL_GetTick()-Tickstart) >=  Timeout))
       {
         /* Disable TXE, RXNE, PE and ERR (Frame error, noise error, overrun error) interrupts for the interrupt process */
-        CLEAR_BIT(huart->Instance->CR1, (USART_CR1_RXNEIE | USART_CR1_PEIE | USART_CR1_TXEIE));
+        CLEAR_BIT(huart->Instance->CR1, (USART_CR1_RXNEIE | USART_CR1_PEIE | USART_CR1_TCIE));
         CLEAR_BIT(huart->Instance->CR3, USART_CR3_EIE);
 
         huart->gState = HAL_UART_STATE_READY;
@@ -1575,7 +1576,7 @@ static HAL_StatusTypeDef UART_Transmit_IT(UART_HandleTypeDef *huart)
     if(huart->TxXferCount == 0U)
     {
       /* Disable the UART Transmit Data Register Empty Interrupt */
-      CLEAR_BIT(huart->Instance->CR1, USART_CR1_TXEIE);
+      CLEAR_BIT(huart->Instance->CR1, USART_CR1_TCIE);
 
       /* Enable the UART Transmit Complete Interrupt */
       SET_BIT(huart->Instance->CR1, USART_CR1_TCIE);
