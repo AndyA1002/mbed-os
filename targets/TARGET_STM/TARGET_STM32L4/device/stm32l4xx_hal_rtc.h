@@ -2,8 +2,6 @@
   ******************************************************************************
   * @file    stm32l4xx_hal_rtc.h
   * @author  MCD Application Team
-  * @version V1.7.1
-  * @date    21-April-2017
   * @brief   Header file of RTC HAL module.
   ******************************************************************************
   * @attention
@@ -45,6 +43,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32l4xx_hal_def.h"
+#include "stm32l4xx_ll_rtc.h"
 
 /** @addtogroup STM32L4xx_HAL_Driver
   * @{
@@ -268,8 +267,8 @@ typedef struct
 /** @defgroup RTC_Input_parameter_format_definitions RTC Input Parameter Format Definitions
   * @{
   */
-#define RTC_FORMAT_BIN                  ((uint32_t)0x000000000)
-#define RTC_FORMAT_BCD                  ((uint32_t)0x000000001)
+#define RTC_FORMAT_BIN                  ((uint32_t)0x00000000)
+#define RTC_FORMAT_BCD                  ((uint32_t)0x00000001)
 /**
   * @}
   */
@@ -718,10 +717,10 @@ HAL_RTCStateTypeDef HAL_RTC_GetState(RTC_HandleTypeDef *hrtc);
   * @{
   */
 /* Masks Definition */
-#define RTC_TR_RESERVED_MASK    ((uint32_t)0x007F7F7F)
-#define RTC_DR_RESERVED_MASK    ((uint32_t)0x00FFFF3F) 
-#define RTC_INIT_MASK           ((uint32_t)0xFFFFFFFFU)  
-#define RTC_RSF_MASK            ((uint32_t)0xFFFFFF5FU)
+#define RTC_TR_RESERVED_MASK    0x007F7F7FU
+#define RTC_DR_RESERVED_MASK    0x00FFFF3FU 
+#define RTC_INIT_MASK           0xFFFFFFFFU
+#define RTC_RSF_MASK            0xFFFFFF5FU
 
 #define RTC_TIMEOUT_VALUE  1000
   

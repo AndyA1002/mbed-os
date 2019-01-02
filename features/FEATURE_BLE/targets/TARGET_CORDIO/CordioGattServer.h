@@ -20,22 +20,42 @@
 #include <stddef.h>
 #include "ble/blecommon.h"
 #include "ble/GattServer.h"
+#include "ble/pal/SigningEventMonitor.h"
 #include "ble/Gap.h"
 #include "wsf_types.h"
 #include "att_api.h"
 
+/*! Maximum count of characteristics that can be stored for authorisation purposes */
+#define MAX_CHARACTERISTIC_AUTHORIZATION_CNT 20
+
 /*! client characteristic configuration descriptors settings */
-#define MAX_CCC_CNT 20
+#define MAX_CCCD_CNT 20
 
 namespace ble {
+
+// fwd declaration of CordioAttClient and BLE
+namespace pal {
 namespace vendor {
 namespace cordio {
+class CordioAttClient;
+}
+}
+}
+
+namespace vendor {
+namespace cordio {
+
+class BLE;
 
 /**
  * Cordio implementation of ::GattServer
  */
-class GattServer : public ::GattServer
+class GattServer : public ::GattServer,
+                   public pal::SigningEventMonitor
 {
+    friend ble::vendor::cordio::BLE;
+    friend ble::pal::vendor::cordio::CordioAttClient;
+
 public:
     /**
      * Return the singleton of the Cordio implementation of ::GattServer.
@@ -66,7 +86,7 @@ public:
      * @see ::GattServer::read
      */
     virtual ble_error_t read(
-        Gap::Handle_t connectionHandle,
+        connection_handle_t connectionHandle,
         GattAttribute::Handle_t attributeHandle,
         uint8_t buffer[], uint16_t *lengthP
     );
@@ -84,7 +104,7 @@ public:
      * @see ::GattServer::write
      */
     virtual ble_error_t write(
-        Gap::Handle_t connectionHandle,
+        connection_handle_t connectionHandle,
         GattAttribute::Handle_t,
         const uint8_t[],
         uint16_t,
@@ -102,7 +122,7 @@ public:
      * @see ::GattServer::areUpdatesEnabled
      */
     virtual ble_error_t areUpdatesEnabled(
-        Gap::Handle_t connectionHandle,
+        connection_handle_t connectionHandle,
         const GattCharacteristic &characteristic,
         bool *enabledP
     );
@@ -147,35 +167,84 @@ public:
      */
     virtual ble_error_t reset(void);
 
+    /**
+     * @see pal::SigningEventMonitor::set_signing_event_handler
+     */
+    virtual void set_signing_event_handler(
+        pal::SigningEventMonitor::EventHandler *signing_event_handler
+    ) {
+        _signing_event_handler = signing_event_handler;
+    }
+
 private:
-    static void cccCback(attsCccEvt_t *pEvt);
-    static void attCback(attEvt_t *pEvt);
-    static uint8_t attsReadCback(dmConnId_t connId, uint16_t handle, uint8_t operation, uint16_t offset, attsAttr_t *pAttr);
-    static uint8_t attsWriteCback(dmConnId_t connId, uint16_t handle, uint8_t operation, uint16_t offset, uint16_t len, uint8_t *pValue, attsAttr_t *pAttr);
+    static uint16_t compute_attributes_count(GattService& service);
+
+    void insert_service_attribute(
+        GattService& service,
+        attsAttr_t *&attribute_it
+    );
+
+    ble_error_t insert_characteristic(
+        GattCharacteristic *characteristic,
+        attsAttr_t *&attribute_it
+    );
+
+    bool is_characteristic_valid(GattCharacteristic *characteristic);
+
+    void insert_characteristic_declaration_attribute(
+        GattCharacteristic *characteristic,
+        attsAttr_t *&attribute_it
+    );
+
+    ble_error_t insert_characteristic_value_attribute(
+        GattCharacteristic *characteristic,
+        attsAttr_t *&attribute_it
+    );
+
+    ble_error_t insert_descriptor(
+        GattCharacteristic *characteristic,
+        GattAttribute* descriptor,
+        attsAttr_t *&attribute_it,
+        bool& cccd_created
+    );
+
+    ble_error_t insert_cccd(
+        GattCharacteristic *characteristic,
+        attsAttr_t *&attribute_it
+    );
+
+    static void cccd_cb(attsCccEvt_t *pEvt);
+    static void att_cb(const attEvt_t *pEvt);
+    static uint8_t atts_read_cb(dmConnId_t connId, uint16_t handle, uint8_t operation, uint16_t offset, attsAttr_t *pAttr);
+    static uint8_t atts_write_cb(dmConnId_t connId, uint16_t handle, uint8_t operation, uint16_t offset, uint16_t len, uint8_t *pValue, attsAttr_t *pAttr);
+    static uint8_t atts_auth_cb(dmConnId_t connId, uint8_t permit, uint16_t handle);
     void add_generic_access_service();
     void add_generic_attribute_service();
     void* alloc_block(size_t block_size);
+    GattCharacteristic* get_auth_char(uint16_t value_handle);
+    bool get_cccd_index_by_cccd_handle(GattAttribute::Handle_t cccd_handle, uint8_t& idx) const;
+    bool get_cccd_index_by_value_handle(GattAttribute::Handle_t char_handle, uint8_t& idx) const;
+    bool is_update_authorized(connection_handle_t connection, GattAttribute::Handle_t value_handle);
 
     struct alloc_block_t {
         alloc_block_t* next;
         uint8_t data[1];
     };
 
-    struct internal_char_t {
-        uint16_t descLen;
-    };
-
     struct internal_service_t {
-        uint16_t uuidLen;
-        internal_char_t *chars;
-        attsGroup_t *attGroup;
+        attsGroup_t attGroup;
         internal_service_t *next;
     };
 
-    attsCccSet_t cccSet[MAX_CCC_CNT];
-    uint16_t cccValues[MAX_CCC_CNT];
-    uint16_t cccHandles[MAX_CCC_CNT];
-    uint8_t cccCnt;
+    pal::SigningEventMonitor::EventHandler *_signing_event_handler;
+
+    attsCccSet_t cccds[MAX_CCCD_CNT];
+    uint16_t cccd_values[MAX_CCCD_CNT];
+    uint16_t cccd_handles[MAX_CCCD_CNT];
+    uint8_t cccd_cnt;
+
+    GattCharacteristic *_auth_char[MAX_CHARACTERISTIC_AUTHORIZATION_CNT];
+    uint8_t _auth_char_count;
 
     struct {
         attsGroup_t service;

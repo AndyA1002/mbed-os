@@ -14,6 +14,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
+from __future__ import print_function
 
 import os
 import binascii
@@ -24,29 +25,56 @@ import sys
 from copy import copy
 from inspect import getmro
 from collections import namedtuple, Mapping
+from future.utils import raise_from
+from tools.resources import FileType
 from tools.targets.LPC import patch
 from tools.paths import TOOLS_BOOTLOADERS
-from tools.utils import json_file_to_dict
+from tools.utils import json_file_to_dict, NotSupportedException
 
 __all__ = ["target", "TARGETS", "TARGET_MAP", "TARGET_NAMES", "CORE_LABELS",
-           "HookError", "generate_py_target", "Target",
+           "CORE_ARCH", "HookError", "generate_py_target", "Target",
            "CUMULATIVE_ATTRIBUTES", "get_resolution_order"]
 
 CORE_LABELS = {
-   "Cortex-M0" : ["M0", "CORTEX_M", "LIKE_CORTEX_M0", "CORTEX"],
-   "Cortex-M0+": ["M0P", "CORTEX_M", "LIKE_CORTEX_M0", "CORTEX"],
-   "Cortex-M1" : ["M1", "CORTEX_M", "LIKE_CORTEX_M1", "CORTEX"],
-   "Cortex-M3" : ["M3", "CORTEX_M", "LIKE_CORTEX_M3", "CORTEX"],
-   "Cortex-M4" : ["M4", "CORTEX_M", "RTOS_M4_M7", "LIKE_CORTEX_M4", "CORTEX"],
-   "Cortex-M4F" : ["M4", "CORTEX_M", "RTOS_M4_M7", "LIKE_CORTEX_M4", "CORTEX"],
-   "Cortex-M7" : ["M7", "CORTEX_M", "RTOS_M4_M7", "LIKE_CORTEX_M7", "CORTEX"],
-   "Cortex-M7F" : ["M7", "CORTEX_M", "RTOS_M4_M7", "LIKE_CORTEX_M7", "CORTEX"],
-   "Cortex-M7FD" : ["M7", "CORTEX_M", "RTOS_M4_M7", "LIKE_CORTEX_M7", "CORTEX"],
-   "Cortex-A9" : ["A9", "CORTEX_A", "LIKE_CORTEX_A9", "CORTEX"],
+    "Cortex-M0": ["M0", "CORTEX_M", "LIKE_CORTEX_M0", "CORTEX"],
+    "Cortex-M0+": ["M0P", "CORTEX_M", "LIKE_CORTEX_M0", "CORTEX"],
+    "Cortex-M1": ["M1", "CORTEX_M", "LIKE_CORTEX_M1", "CORTEX"],
+    "Cortex-M3": ["M3", "CORTEX_M", "LIKE_CORTEX_M3", "CORTEX"],
+    "Cortex-M4": ["M4", "CORTEX_M", "RTOS_M4_M7", "LIKE_CORTEX_M4", "CORTEX"],
+    "Cortex-M4F": ["M4", "CORTEX_M", "RTOS_M4_M7", "LIKE_CORTEX_M4", "CORTEX"],
+    "Cortex-M7": ["M7", "CORTEX_M", "RTOS_M4_M7", "LIKE_CORTEX_M7", "CORTEX"],
+    "Cortex-M7F": ["M7", "CORTEX_M", "RTOS_M4_M7", "LIKE_CORTEX_M7", "CORTEX"],
+    "Cortex-M7FD": ["M7", "CORTEX_M", "RTOS_M4_M7", "LIKE_CORTEX_M7", "CORTEX"],
+    "Cortex-A9": ["A9", "CORTEX_A", "LIKE_CORTEX_A9", "CORTEX"],
     "Cortex-M23": ["M23", "CORTEX_M", "LIKE_CORTEX_M23", "CORTEX"],
-    "Cortex-M23-NS": ["M23", "CORTEX_M", "LIKE_CORTEX_M23", "CORTEX"],
+    "Cortex-M23-NS": ["M23", "M23_NS", "CORTEX_M", "LIKE_CORTEX_M23", "CORTEX"],
     "Cortex-M33": ["M33", "CORTEX_M", "LIKE_CORTEX_M33", "CORTEX"],
-    "Cortex-M33-NS": ["M33", "CORTEX_M", "LIKE_CORTEX_M33", "CORTEX"]
+    "Cortex-M33-NS": ["M33", "M33_NS", "CORTEX_M", "LIKE_CORTEX_M33", "CORTEX"],
+    "Cortex-M33F": ["M33", "CORTEX_M", "LIKE_CORTEX_M33", "CORTEX"],
+    "Cortex-M33F-NS": ["M33", "M33_NS", "CORTEX_M", "LIKE_CORTEX_M33", "CORTEX"],
+    "Cortex-M33FD": ["M33", "CORTEX_M", "LIKE_CORTEX_M33", "CORTEX"],
+    "Cortex-M33FD-NS": ["M33", "M33_NS", "CORTEX_M", "LIKE_CORTEX_M33", "CORTEX"]
+}
+
+CORE_ARCH = {
+    "Cortex-M0": 6,
+    "Cortex-M0+": 6,
+    "Cortex-M1": 6,
+    "Cortex-M3": 7,
+    "Cortex-M4": 7,
+    "Cortex-M4F": 7,
+    "Cortex-M7": 7,
+    "Cortex-M7F": 7,
+    "Cortex-M7FD": 7,
+    "Cortex-A9": 7,
+    "Cortex-M23": 8,
+    "Cortex-M23-NS": 8,
+    "Cortex-M33": 8,
+    "Cortex-M33F": 8,
+    "Cortex-M33-NS": 8,
+    "Cortex-M33F-NS": 8,
+    "Cortex-M33FD": 8,
+    "Cortex-M33FD-NS": 8,
 }
 
 ################################################################################
@@ -65,7 +93,7 @@ def cached(func):
     """
     def wrapper(*args, **kwargs):
         """The wrapped function itself"""
-        if not CACHES.has_key((func.__name__, args)):
+        if (func.__name__, args) not in CACHES:
             CACHES[(func.__name__, args)] = func(*args, **kwargs)
         return CACHES[(func.__name__, args)]
     return wrapper
@@ -73,7 +101,7 @@ def cached(func):
 
 # Cumulative attributes can have values appended to them, so they
 # need to be computed differently than regular attributes
-CUMULATIVE_ATTRIBUTES = ['extra_labels', 'macros', 'device_has', 'features']
+CUMULATIVE_ATTRIBUTES = ['extra_labels', 'macros', 'device_has', 'features', 'components']
 
 
 def get_resolution_order(json_data, target_name, order, level=0):
@@ -97,7 +125,12 @@ def get_resolution_order(json_data, target_name, order, level=0):
 
 def target(name, json_data):
     """Construct a target object"""
-    resolution_order = get_resolution_order(json_data, name, [])
+    try:
+        resolution_order = get_resolution_order(json_data, name, [])
+    except KeyError as exc:
+        raise_from(NotSupportedException(
+            "target {} has an incomplete target definition".format(name)
+        ), exc)
     resolution_order_names = [tgt for tgt, _ in resolution_order]
     return Target(name=name,
                   json_data={key: value for key, value in json_data.items()
@@ -137,15 +170,21 @@ class Target(namedtuple("Target", "name json_data resolution_order resolution_or
     @cached
     def get_json_target_data():
         """Load the description of JSON target data"""
-        targets = json_file_to_dict(Target.__targets_json_location or
-                                    Target.__targets_json_location_default)
+        from_file = (Target.__targets_json_location or
+                     Target.__targets_json_location_default)
+
+        targets = json_file_to_dict(from_file)
+        for tgt in targets.values():
+            tgt["_from_file"] = from_file
 
         for extra_target in Target.__extra_target_json_files:
-            for k, v in json_file_to_dict(extra_target).iteritems():
+            for k, v in json_file_to_dict(extra_target).items():
                 if k in targets:
-                    print 'WARNING: Custom target "%s" cannot replace existing target.' % k
+                    print('WARNING: Custom target "%s" cannot replace existing '
+                          'target.' % k)
                 else:
                     targets[k] = v
+                    targets[k]["_from_file"] = extra_target
 
         return targets
 
@@ -203,8 +242,7 @@ class Target(namedtuple("Target", "name json_data resolution_order resolution_or
                 def_idx = idx
                 break
         else:
-            raise AttributeError("Attribute '%s' not found in target '%s'"
-                                 % (attrname, self.name))
+            return []
         # Get the starting value of the attribute
         starting_value = (tdata[self.resolution_order[def_idx][0]][attrname]
                           or [])[:]
@@ -212,16 +250,16 @@ class Target(namedtuple("Target", "name json_data resolution_order resolution_or
         # inheritance level, left to right order to figure out all the
         # other classes that change the definition by adding or removing
         # elements
-        for idx in xrange(self.resolution_order[def_idx][1] - 1, -1, -1):
+        for idx in range(self.resolution_order[def_idx][1] - 1, -1, -1):
             same_level_targets = [tar[0] for tar in self.resolution_order
                                   if tar[1] == idx]
             for tar in same_level_targets:
                 data = tdata[tar]
                 # Do we have anything to add ?
-                if data.has_key(attrname + "_add"):
+                if (attrname + "_add") in data:
                     starting_value.extend(data[attrname + "_add"])
                 # Do we have anything to remove ?
-                if data.has_key(attrname + "_remove"):
+                if (attrname + "_remove") in data:
                     # Macros can be defined either without a value (MACRO)
                     # or with a value (MACRO=10). When removing, we specify
                     # only the name of the macro, without the value. So we
@@ -258,19 +296,14 @@ class Target(namedtuple("Target", "name json_data resolution_order resolution_or
             starting_value = None
             for tgt in self.resolution_order:
                 data = tdata[tgt[0]]
-                if data.has_key(attrname):
-                    starting_value = data[attrname]
-                    break
+                try:
+                    return data[attrname]
+                except KeyError:
+                    pass
             else: # Attribute not found
                 raise AttributeError(
                     "Attribute '%s' not found in target '%s'"
                     % (attrname, self.name))
-            # 'progen' needs the full path to the template (the path in JSON is
-            # relative to tools/export)
-            if attrname == "progen":
-                return self.__add_paths_to_progen(starting_value)
-            else:
-                return starting_value
 
     def __getattr__(self, attrname):
         """ Return the value of an attribute. This function only computes the
@@ -305,11 +338,15 @@ class Target(namedtuple("Target", "name json_data resolution_order resolution_or
         if "Target" in names:
             names.remove("Target")
         labels = (names + CORE_LABELS[self.core] + self.extra_labels)
-        # Automatically define UVISOR_UNSUPPORTED if the target doesn't
-        # specifically define UVISOR_SUPPORTED
-        if "UVISOR_SUPPORTED" not in labels:
-            labels.append("UVISOR_UNSUPPORTED")
         return labels
+
+    @property
+    def is_PSA_secure_target(self):
+        return 'SPE_Target' in self.labels
+
+    @property
+    def is_PSA_non_secure_target(self):
+        return 'NSPE_Target' in self.labels
 
     def init_hooks(self, hook, toolchain):
         """Initialize the post-build hooks for a toolchain. For now, this
@@ -338,7 +375,7 @@ class Target(namedtuple("Target", "name json_data resolution_order resolution_or
         # "class_name" must refer to a class in this file, so check if the
         # class exists
         mdata = self.get_module_data()
-        if not mdata.has_key(class_name) or \
+        if class_name not in mdata or \
            not inspect.isclass(mdata[class_name]):
             raise HookError(
                 ("Class '%s' required by '%s' in target '%s'"
@@ -373,7 +410,7 @@ class LPCTargetCode(object):
     @staticmethod
     def lpc_patch(t_self, resources, elf, binf):
         """Patch an elf file"""
-        t_self.debug("LPC Patch: %s" % os.path.split(binf)[1])
+        t_self.notify.debug("LPC Patch: %s" % os.path.split(binf)[1])
         patch(binf)
 
 class LPC4088Code(object):
@@ -407,7 +444,7 @@ class LPC4088Code(object):
         # file to 'binf'
         shutil.rmtree(binf, True)
         os.rename(binf + '.temp', binf)
-        t_self.debug("Generated custom binary file (internal flash + SPIFI)")
+        t_self.notify.debug("Generated custom binary file (internal flash + SPIFI)")
         LPCTargetCode.lpc_patch(t_self, resources, elf, binf)
 
 class TEENSY3_1Code(object):
@@ -427,7 +464,7 @@ class MTSCode(object):
         loader = os.path.join(TOOLS_BOOTLOADERS, target_name, "bootloader.bin")
         target = binf + ".tmp"
         if not os.path.exists(loader):
-            print "Can't find bootloader binary: " + loader
+            print("Can't find bootloader binary: " + loader)
             return
         outbin = open(target, 'w+b')
         part = open(loader, 'rb')
@@ -458,6 +495,11 @@ class MTSCode(object):
         """A hoof for the MTS Dragonfly"""
         MTSCode._combine_bins_helper("MTS_DRAGONFLY_F411RE", binf)
 
+    @staticmethod
+    def combine_bins_mtb_mts_dragonfly(t_self, resources, elf, binf):
+        """A hook for the MTB MTS Dragonfly"""
+        MTSCode._combine_bins_helper("MTB_MTS_DRAGONFLY", binf)
+
 class MCU_NRF51Code(object):
     """NRF51 Hooks"""
     @staticmethod
@@ -467,10 +509,10 @@ class MCU_NRF51Code(object):
         sdf = None
         for softdevice_and_offset_entry\
             in t_self.target.EXPECTED_SOFTDEVICES_WITH_OFFSETS:
-            for hexf in resources.hex_files:
+            for hexf in resources.get_file_paths(FileType.HEX):
                 if hexf.find(softdevice_and_offset_entry['name']) != -1:
-                    t_self.debug("SoftDevice file found %s."
-                                 % softdevice_and_offset_entry['name'])
+                    t_self.notify.debug("SoftDevice file found %s."
+                                        % softdevice_and_offset_entry['name'])
                     sdf = hexf
 
                 if sdf is not None:
@@ -479,22 +521,22 @@ class MCU_NRF51Code(object):
                 break
 
         if sdf is None:
-            t_self.debug("Hex file not found. Aborting.")
+            t_self.notify.debug("Hex file not found. Aborting.")
             return
 
         # Look for bootloader file that matches this soft device or bootloader
         # override image
         blf = None
         if t_self.target.MERGE_BOOTLOADER is True:
-            for hexf in resources.hex_files:
+            for hexf in resources.get_file_paths(FileType.HEX):
                 if hexf.find(t_self.target.OVERRIDE_BOOTLOADER_FILENAME) != -1:
-                    t_self.debug("Bootloader file found %s."
-                                 % t_self.target.OVERRIDE_BOOTLOADER_FILENAME)
+                    t_self.notify.debug("Bootloader file found %s."
+                                        % t_self.target.OVERRIDE_BOOTLOADER_FILENAME)
                     blf = hexf
                     break
                 elif hexf.find(softdevice_and_offset_entry['boot']) != -1:
-                    t_self.debug("Bootloader file found %s."
-                                 % softdevice_and_offset_entry['boot'])
+                    t_self.notify.debug("Bootloader file found %s."
+                                        % softdevice_and_offset_entry['boot'])
                     blf = hexf
                     break
 
@@ -508,14 +550,16 @@ class MCU_NRF51Code(object):
             binh.loadbin(binf, softdevice_and_offset_entry['offset'])
 
         if t_self.target.MERGE_SOFT_DEVICE is True:
-            t_self.debug("Merge SoftDevice file %s"
-                         % softdevice_and_offset_entry['name'])
+            t_self.notify.debug("Merge SoftDevice file %s"
+                                % softdevice_and_offset_entry['name'])
             sdh = IntelHex(sdf)
+            sdh.start_addr = None
             binh.merge(sdh)
 
         if t_self.target.MERGE_BOOTLOADER is True and blf is not None:
-            t_self.debug("Merge BootLoader file %s" % blf)
+            t_self.notify.debug("Merge BootLoader file %s" % blf)
             blh = IntelHex(blf)
+            blh.start_addr = None
             binh.merge(blh)
 
         with open(binf.replace(".bin", ".hex"), "w") as fileout:
@@ -534,6 +578,19 @@ class RTL8195ACode:
     def binary_hook(t_self, resources, elf, binf):
         from tools.targets.REALTEK_RTL8195AM import rtl8195a_elf2bin
         rtl8195a_elf2bin(t_self, elf, binf)
+
+class PSOC6Code:
+    @staticmethod
+    def complete(t_self, resources, elf, binf):
+        from tools.targets.PSOC6 import complete as psoc6_complete
+        if hasattr(t_self.target, "sub_target"):
+            # Completing main image involves merging M0 image.
+            from tools.targets.PSOC6 import find_cm0_image
+            m0hexf = find_cm0_image(t_self, resources, elf, binf)
+            psoc6_complete(t_self, elf, binf, m0hexf)
+        else:
+            psoc6_complete(t_self, elf, binf)
+
 ################################################################################
 
 # Instantiate all public targets

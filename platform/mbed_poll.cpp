@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2017 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +16,13 @@
  */
 #include "mbed_poll.h"
 #include "FileHandle.h"
-#include "Timer.h"
-#ifdef MBED_CONF_RTOS_PRESENT
-#include "rtos/Thread.h"
+#if MBED_CONF_RTOS_PRESENT
+#include "rtos/Kernel.h"
+#include "rtos/ThisThread.h"
+using namespace rtos;
+#else
+#include "drivers/Timer.h"
+#include "drivers/LowPowerTimer.h"
 #endif
 
 namespace mbed {
@@ -25,7 +30,7 @@ namespace mbed {
 // timeout -1 forever, or milliseconds
 int poll(pollfh fhs[], unsigned nfhs, int timeout)
 {
-    /**
+    /*
      * TODO Proper wake-up mechanism.
      * In order to correctly detect availability of read/write a FileHandle, we needed
      * a select or poll mechanisms. We opted for poll as POSIX defines in
@@ -34,10 +39,23 @@ int poll(pollfh fhs[], unsigned nfhs, int timeout)
      * interested in. In future, his spinning behaviour will be replaced with
      * condition variables.
      */
+#if MBED_CONF_RTOS_PRESENT
+    uint64_t start_time = 0;
+    if (timeout > 0) {
+        start_time = Kernel::get_ms_count();
+    }
+#define TIME_ELAPSED() int64_t(Kernel::get_ms_count() - start_time)
+#else
+#if MBED_CONF_PLATFORM_POLL_USE_LOWPOWER_TIMER
+    LowPowerTimer timer;
+#else
     Timer timer;
+#endif
     if (timeout > 0) {
         timer.start();
     }
+#define TIME_ELAPSED() timer.read_ms()
+#endif // MBED_CONF_RTOS_PRESENT
 
     int count = 0;
     for (;;) {
@@ -60,13 +78,13 @@ int poll(pollfh fhs[], unsigned nfhs, int timeout)
         }
 
         /* Nothing selected - this is where timeout handling would be needed */
-        if (timeout == 0 || (timeout > 0 && timer.read_ms() > timeout)) {
+        if (timeout == 0 || (timeout > 0 && TIME_ELAPSED() > timeout)) {
             break;
         }
 #ifdef MBED_CONF_RTOS_PRESENT
         // TODO - proper blocking
         // wait for condition variable, wait queue whatever here
-        rtos::Thread::wait(1);
+        rtos::ThisThread::sleep_for(1);
 #endif
     }
     return count;

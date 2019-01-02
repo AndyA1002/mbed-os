@@ -10,7 +10,6 @@ import os.path
 import sys
 import subprocess
 from shutil import rmtree
-from sets import Set
 
 ROOT = abspath(dirname(dirname(dirname(dirname(__file__)))))
 sys.path.insert(0, ROOT)
@@ -18,9 +17,12 @@ sys.path.insert(0, ROOT)
 from tools.build_api import get_mbed_official_release
 from tools.targets import TARGET_MAP
 from tools.export import EXPORTERS
+from tools.project import EXPORTER_ALIASES
+from tools.toolchains import TOOLCHAINS
 
-SUPPORTED_TOOLCHAINS = ["ARM", "IAR", "GCC_ARM", "ARMC6"]
-SUPPORTED_IDES = [exp for exp in EXPORTERS.keys() if exp != "cmsis" and exp != "zip"]
+SUPPORTED_TOOLCHAINS = list(TOOLCHAINS - set(u'uARM'))
+SUPPORTED_IDES = [exp for exp in EXPORTERS.keys() + EXPORTER_ALIASES.keys()
+                  if exp != "cmsis" and exp != "zip"]
 
 
 def print_list(lst):
@@ -36,7 +38,7 @@ def print_list(lst):
 
 
 def print_category(results, index, message):
-    summary = [example for key, summ in results.iteritems()
+    summary = [example for key, summ in results.items()
                for example in summ[index]]
     if all(len(s) == 0 for s in summary):
         return
@@ -166,8 +168,14 @@ def source_repos(config, examples):
                 if os.path.exists(name):
                     print("'%s' example directory already exists. Deleting..." % name)
                     rmtree(name)
+                
+                cmd = "mbed-cli import %s" %repo_info['repo']
+                result = subprocess.call(cmd, shell=True)
 
-                subprocess.call(["mbed-cli", "import", repo_info['repo']])
+                if result:
+                    return result
+    
+    return 0                
 
 def clone_repos(config, examples , retry = 3):
     """ Clones each of the repos associated with the specific examples name from the
@@ -185,11 +193,14 @@ def clone_repos(config, examples , retry = 3):
                 if os.path.exists(name):
                     print("'%s' example directory already exists. Deleting..." % name)
                     rmtree(name)
+                cmd = "%s clone %s" %(repo_info['type'], repo_info['repo'])
                 for i in range(0, retry):
-                    if subprocess.call([repo_info['type'], "clone", repo_info['repo']]) == 0:
+                    if not subprocess.call(cmd, shell=True):                        
                         break
                 else:
                     print("ERROR : unable to clone the repo {}".format(name))
+                    return 1
+    return 0
 
 def deploy_repos(config, examples):
     """ If the example directory exists as provided by the json config file,
@@ -201,15 +212,19 @@ def deploy_repos(config, examples):
     print("\nDeploying example repos....\n")
     for example in config['examples']:
         for repo_info in get_repo_list(example):
-            name = basename(repo_info['repo'])
+            name = basename(repo_info['repo'].strip('/'))
             if name in examples:
                 if os.path.exists(name):
                     os.chdir(name)
-                    subprocess.call(["mbed-cli", "deploy"])
+                    result = subprocess.call("mbed-cli deploy", shell=True)
                     os.chdir("..")
+                    if result:
+                        print("mbed-cli deploy command failed for '%s'" % name)
+                        return result                
                 else:
                     print("'%s' example directory doesn't exist. Skipping..." % name)
-
+                    return 1
+    return  0
 
 def get_num_failures(results, export=False):
     """ Returns the number of failed compilations from the results summary
@@ -221,7 +236,7 @@ def get_num_failures(results, export=False):
     """
     num_failures = 0
 
-    for key, val in results.iteritems():
+    for key, val in results.items():
         num_failures = num_failures + len(val[3])
         if export:
             num_failures += len(val[4])
@@ -253,11 +268,11 @@ def export_repos(config, ides, targets, examples):
             ides - List of IDES to export to
     """
     results = {}
-    valid_examples = Set(examples)
+    valid_examples = set(examples)
     print("\nExporting example repos....\n")
     for example in config['examples']:
         example_names = [basename(x['repo']) for x in get_repo_list(example)]
-        common_examples = valid_examples.intersection(Set(example_names))
+        common_examples = valid_examples.intersection(set(example_names))
         if not common_examples:
             continue
         export_failures = []
@@ -292,7 +307,7 @@ def export_repos(config, ides, targets, examples):
                         status("SUCCESS exporting")
                         status("Building")
                         try:
-                            if EXPORTERS[ide].build(example_project_name):
+                            if EXPORTERS[ide].build(example_project_name, cleanup=False):
                                 status("FAILURE building")
                                 build_failures.append(example_name)
                             else:
@@ -336,11 +351,11 @@ def compile_repos(config, toolchains, targets, profile, examples):
 
     """
     results = {}
-    valid_examples = Set(examples)
+    valid_examples = set(examples)
     print("\nCompiling example repos....\n")
     for example in config['examples']:
         example_names = [basename(x['repo']) for x in get_repo_list(example)]
-        common_examples = valid_examples.intersection(Set(example_names))
+        common_examples = valid_examples.intersection(set(example_names))
         if not common_examples:
             continue
         failures = []
@@ -403,5 +418,11 @@ def update_mbedos_version(config, tag, examples):
             update_dir =  basename(repo_info['repo']) + "/mbed-os"
             print("\nChanging dir to %s\n" % update_dir)
             os.chdir(update_dir)
-            subprocess.call(["mbed-cli", "update", tag, "--clean"])
+            cmd = "mbed-cli update %s --clean" %tag
+            result = subprocess.call(cmd, shell=True)
             os.chdir("../..")
+            if result:
+                return result
+    
+    return 0
+  

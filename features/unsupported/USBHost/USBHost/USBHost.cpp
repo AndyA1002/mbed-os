@@ -88,11 +88,14 @@ void USBHost::usb_process()
                         /*  check that hub is connected to root port  */
                         if (usb_msg->hub_parent) {
                             /*  a hub device must be present */
+#if MAX_HUB_NB
+
                             for (k = 0; k < MAX_HUB_NB; k++) {
                                 if ((&hubs[k] == usb_msg->hub_parent) && (hub_in_use[k])) {
                                     hub_unplugged=false;
                                 }
                             }
+#endif
                         } else {
                             hub_unplugged = false;
                         }
@@ -168,7 +171,7 @@ void USBHost::usb_process()
                                 break;
                             }
 
-                            Thread::wait(100);
+                            ThisThread::sleep_for(100);
                         }
 
                         USB_INFO("New device connected: %p [hub: %d - port: %d]", &devices[i], usb_msg->hub, usb_msg->port);
@@ -312,7 +315,7 @@ USBHost::USBHost() : usbThread(osPriorityNormal, USB_THREAD_STACK)
     }
 #endif
 
-    usbThread.start(this, &USBHost::usb_process);
+    usbThread.start(callback(this, &USBHost::usb_process));
 }
 
 USBHost::Lock::Lock(USBHost* pHost) : m_pHost(pHost)
@@ -596,7 +599,7 @@ USB_TYPE USBHost::resetDevice(USBDeviceConnected * dev)
     int index = findDevice(dev);
     if (index != -1) {
         USB_DBG("Resetting hub %d, port %d\n", dev->getHub(), dev->getPort());
-        Thread::wait(100);
+        ThisThread::sleep_for(100);
         if (dev->getHub() == 0) {
             resetRootHub();
         }
@@ -605,7 +608,7 @@ USB_TYPE USBHost::resetDevice(USBDeviceConnected * dev)
             dev->getHubParent()->portReset(dev->getPort());
         }
 #endif
-        Thread::wait(100);
+        ThisThread::sleep_for(100);
         deviceReset[index] = true;
         return USB_TYPE_OK;
     }
@@ -971,7 +974,7 @@ USB_TYPE USBHost::enumerate(USBDeviceConnected * dev, IUSBEnumerator* pEnumerato
     } while(0);
 
     // Some devices may require this delay
-    Thread::wait(100);
+    ThisThread::sleep_for(100);
 
     return USB_TYPE_OK;
 }

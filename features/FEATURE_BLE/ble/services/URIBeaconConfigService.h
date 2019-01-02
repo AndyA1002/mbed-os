@@ -39,11 +39,16 @@ extern const uint8_t UUID_RESET_CHAR[UUID::LENGTH_OF_LONG_UUID];
 extern const uint8_t BEACON_UUID[sizeof(UUID::ShortUUIDBytes_t)];
 
 /**
-* @class URIBeaconConfigService
-* @brief UriBeacon Configuration Service. Can be used to set URL, adjust power levels, and set flags.
-* See http://uribeacon.org
-*
-*/
+ * @class URIBeaconConfigService
+ * @brief UriBeacon Configuration Service. You can use this to set URL, adjust power levels and set flags.
+ * See http://uribeacon.org
+ *
+ * @deprecated This service is deprecated, and no replacement is currently available.
+ */
+MBED_DEPRECATED_SINCE(
+    "mbed-os-5.11",
+    "This service is deprecated, and no replacement is currently available."
+)
 class URIBeaconConfigService {
   public:
     /**
@@ -75,21 +80,27 @@ class URIBeaconConfigService {
     };
 
     /**
-     * @param[ref]    ble
+     * @param[in]    bleIn
      *                    BLE object for the underlying controller.
-     * @param[in/out] paramsIn
+     * @param[in,out] paramsIn
      *                    Reference to application-visible beacon state, loaded
      *                    from persistent storage at startup.
-     * @paramsP[in]   resetToDefaultsFlag
+     * @param[in]   resetToDefaultsFlag
      *                    Applies to the state of the 'paramsIn' parameter.
      *                    If true, it indicates that paramsIn is potentially
      *                    un-initialized, and default values should be used
      *                    instead. Otherwise, paramsIn overrides the defaults.
-     * @param[in]     defaultUriDataIn
+     * @param[in]     defaultURIDataIn
      *                    Default un-encoded URI. Applies only if the resetToDefaultsFlag is true.
      * @param[in]     defaultAdvPowerLevelsIn
      *                    Default power-levels array. Applies only if the resetToDefaultsFlag is true.
+     *
+     * @deprecated This service is deprecated, and no replacement is currently available.
      */
+    MBED_DEPRECATED_SINCE(
+        "mbed-os-5.11",
+        "This service is deprecated, and no replacement is currently available."
+    )
     URIBeaconConfigService(BLE          &bleIn,
                            Params_t      &paramsIn,
                            bool          resetToDefaultsFlag,

@@ -1,8 +1,14 @@
 
 /** \addtogroup platform */
 /** @{*/
+/**
+ * \defgroup platform_toolchain Toolchain functions
+ * @{
+ */
+
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2013 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,7 +64,7 @@
  *
  *  @note
  *  IAR does not support alignment greater than word size on the stack
- *  
+ *
  *  @code
  *  #include "mbed_toolchain.h"
  *
@@ -120,16 +126,16 @@
  *  should contain a regular function declaration to insure the function is emitted.
  *  A function marked weak will not be emitted if an alternative non-weak
  *  implementation is defined.
- *  
+ *
  *  @note
  *  Weak functions are not friendly to making code re-usable, as they can only
  *  be overridden once (and if they are multiply overridden the linker will emit
  *  no warning). You should not normally use weak symbols as part of the API to
  *  re-usable modules.
- *  
+ *
  *  @code
  *  #include "mbed_toolchain.h"
- *  
+ *
  *  MBED_WEAK void foo() {
  *      // a weak implementation of foo that can be overriden by a definition
  *      // without  __weak
@@ -139,6 +145,8 @@
 #ifndef MBED_WEAK
 #if defined(__ICCARM__)
 #define MBED_WEAK __weak
+#elif defined(__MINGW32__)
+#define MBED_WEAK
 #else
 #define MBED_WEAK __attribute__((weak))
 #endif
@@ -168,9 +176,9 @@
  *
  *  @code
  *  #include "mbed_toolchain.h"
- *  
+ *
  *  MBED_NOINLINE void foo() {
- *  
+ *
  *  }
  *  @endcode
  */
@@ -190,9 +198,9 @@
  *
  *  @code
  *  #include "mbed_toolchain.h"
- *  
+ *
  *  MBED_FORCEINLINE void foo() {
- *  
+ *
  *  }
  *  @endcode
  */
@@ -211,7 +219,7 @@
  *
  *  @code
  *  #include "mbed_toolchain.h"
- *  
+ *
  *  MBED_NORETURN void foo() {
  *      // must never return
  *      while (1) {}
@@ -230,8 +238,8 @@
 
 /** MBED_UNREACHABLE
  *  An unreachable statement. If the statement is reached,
- *  behaviour is undefined. Useful in situations where the compiler
- *  cannot deduce the unreachability of code.
+ *  behavior is undefined. Useful in situations where the compiler
+ *  cannot deduce if the code is unreachable.
  *
  *  @code
  *  #include "mbed_toolchain.h"
@@ -261,7 +269,7 @@
  *
  *  @code
  *  #include "mbed_toolchain.h"
- *  
+ *
  *  MBED_DEPRECATED("don't foo any more, bar instead")
  *  void foo(int arg);
  *  @endcode
@@ -325,6 +333,20 @@
 #endif
 #endif
 
+/**
+ * Macro expanding to a string literal of the enclosing function name.
+ *
+ * The string returned takes into account language specificity and yield human
+ * readable content.
+ *
+ * As an example, if the macro is used within a C++ function then the string
+ * literal containing the function name will contain the complete signature of
+ * the function - including template parameters - and namespace qualifications.
+ */
+#ifndef MBED_PRETTY_FUNCTION
+#define MBED_PRETTY_FUNCTION __PRETTY_FUNCTION__
+#endif
+
 #ifndef MBED_PRINTF
 #if defined(__GNUC__) || defined(__CC_ARM)
 #define MBED_PRINTF(format_idx, first_param_idx) __attribute__ ((__format__(__printf__, format_idx, first_param_idx)))
@@ -335,7 +357,7 @@
 
 #ifndef MBED_PRINTF_METHOD
 #if defined(__GNUC__) || defined(__CC_ARM)
-#define MBED_PRINTF_METHOD(format_idx, first_param_idx) __attribute__ ((__format__(__printf__, format_idx+1, first_param_idx+1)))
+#define MBED_PRINTF_METHOD(format_idx, first_param_idx) __attribute__ ((__format__(__printf__, format_idx+1, first_param_idx == 0 ? 0 : first_param_idx+1)))
 #else
 #define MBED_PRINTF_METHOD(format_idx, first_param_idx)
 #endif
@@ -351,11 +373,25 @@
 
 #ifndef MBED_SCANF_METHOD
 #if defined(__GNUC__) || defined(__CC_ARM)
-#define MBED_SCANF_METHOD(format_idx, first_param_idx) __attribute__ ((__format__(__scanf__, format_idx+1, first_param_idx+1)))
+#define MBED_SCANF_METHOD(format_idx, first_param_idx) __attribute__ ((__format__(__scanf__, format_idx+1, first_param_idx == 0 ? 0 : first_param_idx+1)))
 #else
 #define MBED_SCANF_METHOD(format_idx, first_param_idx)
 #endif
 #endif
+
+// Macro containing the filename part of the value of __FILE__. Defined as
+// string literal.
+#ifndef MBED_FILENAME
+#if defined(__CC_ARM)
+#define MBED_FILENAME __MODULE__
+#elif defined(__GNUC__)
+#define MBED_FILENAME (__builtin_strrchr(__FILE__, '/') ? __builtin_strrchr(__FILE__, '/') + 1 : __builtin_strrchr(__FILE__, '\\') ? __builtin_strrchr(__FILE__, '\\') + 1 : __FILE__)
+#elif defined(__ICCARM__)
+#define MBED_FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : __FILE__)
+#else
+#define MBED_FILENAME __FILE__
+#endif
+#endif // #ifndef MBED_FILENAME
 
 // FILEHANDLE declaration
 #if defined(TOOLCHAIN_ARM)
@@ -379,6 +415,28 @@ typedef int FILEHANDLE;
 #define EXTERN extern
 #endif
 
+/** MBED_NONSECURE_ENTRY
+ *  Declare a function that can be called from non-secure world or secure world
+ *
+ *  @code
+ *  #include "mbed_toolchain.h"
+ *
+ *  MBED_NONSECURE_ENTRY void foo() {
+ *
+ *  }
+ *  @endcode
+ */
+#if defined (__ARM_FEATURE_CMSE) && (__ARM_FEATURE_CMSE == 3L)
+#if defined (__ICCARM__)
+#define MBED_NONSECURE_ENTRY       __cmse_nonsecure_entry
+#else
+#define MBED_NONSECURE_ENTRY       __attribute__((cmse_nonsecure_entry))
+#endif
+#else
+#define MBED_NONSECURE_ENTRY
 #endif
 
+#endif
+
+/** @}*/
 /** @}*/

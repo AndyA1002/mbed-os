@@ -1,8 +1,6 @@
-;******************** (C) COPYRIGHT 2015 STMicroelectronics ********************
+;******************** (C) COPYRIGHT 2017 STMicroelectronics ********************
 ;* File Name          : startup_stm32f429xx.s
 ;* Author             : MCD Application Team
-;* Version            : V2.4.0
-;* Date               : 14-August-2015
 ;* Description        : STM32F429x devices vector table for MDK-ARM_STD toolchain. 
 ;*                      This module performs:
 ;*                      - Set the initial SP
@@ -170,15 +168,9 @@ __Vectors_Size  EQU  __Vectors_End - __Vectors
 ; Reset handler
 Reset_Handler    PROC
                  EXPORT  Reset_Handler             [WEAK]
-        IMPORT  SystemInitPre
-        IMPORT  HAL_InitPre
         IMPORT  SystemInit
         IMPORT  __main
 
-                 LDR     R0, =SystemInitPre
-                 BLX     R0
-                 LDR     R0, =HAL_InitPre
-                 BLX     R0
                  LDR     R0, =SystemInit
                  BLX     R0
                  LDR     R0, =__main

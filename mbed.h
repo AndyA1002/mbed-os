@@ -16,6 +16,8 @@
 #ifndef MBED_H
 #define MBED_H
 
+#include "platform/mbed_version.h"
+
 #if MBED_CONF_RTOS_PRESENT
 #include "rtos/rtos.h"
 #endif
@@ -70,6 +72,8 @@
 #include "drivers/RawSerial.h"
 #include "drivers/UARTSerial.h"
 #include "drivers/FlashIAP.h"
+#include "drivers/MbedCRC.h"
+#include "drivers/QSPI.h"
 
 // mbed Internal components
 #include "drivers/Timer.h"
@@ -82,7 +86,7 @@
 #include "drivers/InterruptIn.h"
 #include "platform/mbed_wait_api.h"
 #include "hal/sleep_api.h"
-#include "platform/mbed_sleep.h"
+#include "platform/mbed_power_mgmt.h"
 #include "platform/mbed_rtc_time.h"
 #include "platform/mbed_poll.h"
 #include "platform/ATCmdParser.h"
@@ -91,12 +95,18 @@
 #include "platform/DirHandle.h"
 #include "platform/CriticalSectionLock.h"
 #include "platform/DeepSleepLock.h"
+#include "platform/ScopedRomWriteLock.h"
+#include "platform/ScopedRamExecutionLock.h"
+#include "platform/mbed_stats.h"
 
 // mbed Non-hardware components
 #include "platform/Callback.h"
 #include "platform/FunctionPointer.h"
+#include "platform/ScopedLock.h"
 
+#ifndef MBED_NO_GLOBAL_USING_DIRECTIVE
 using namespace mbed;
 using namespace std;
+#endif
 
 #endif

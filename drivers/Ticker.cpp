@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2013 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,11 +23,12 @@
 
 namespace mbed {
 
-void Ticker::detach() {
+void Ticker::detach()
+{
     core_util_critical_section_enter();
     remove();
     // unlocked only if we were attached (we locked it) and this is not low power ticker
-    if(_function && _lock_deepsleep) {
+    if (_function && _lock_deepsleep) {
         sleep_manager_unlock_deep_sleep();
     }
 
@@ -34,7 +36,8 @@ void Ticker::detach() {
     core_util_critical_section_exit();
 }
 
-void Ticker::setup(us_timestamp_t t) {
+void Ticker::setup(us_timestamp_t t)
+{
     core_util_critical_section_enter();
     remove();
     _delay = t;
@@ -42,7 +45,8 @@ void Ticker::setup(us_timestamp_t t) {
     core_util_critical_section_exit();
 }
 
-void Ticker::handler() {
+void Ticker::handler()
+{
     insert_absolute(event.timestamp + _delay);
     if (_function) {
         _function();

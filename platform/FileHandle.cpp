@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2016 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,11 +32,6 @@ off_t FileHandle::size()
     /* return to our old position */
     seek(off, SEEK_SET);
     return size;
-}
-
-std::FILE *fdopen(FileHandle *fh, const char *mode)
-{
-    return mbed_fdopen(fh, mode);
 }
 
 } // namespace mbed

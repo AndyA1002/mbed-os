@@ -33,6 +33,10 @@
 namespace rtos {
 /** \addtogroup rtos */
 /** @{*/
+/**
+ * \defgroup rtos_MemoryPool MemoryPool class
+ * @{
+ */
 
 /** Define and manage fixed-size memory pools of objects of a given type.
   @tparam  T         data type of a single object (element).
@@ -44,38 +48,52 @@ namespace rtos {
 */
 template<typename T, uint32_t pool_sz>
 class MemoryPool : private mbed::NonCopyable<MemoryPool<T, pool_sz> > {
-	MBED_STATIC_ASSERT(pool_sz > 0, "Invalid memory pool size. Must be greater than 0.");
+    MBED_STATIC_ASSERT(pool_sz > 0, "Invalid memory pool size. Must be greater than 0.");
 public:
-    /** Create and Initialize a memory pool. */
-    MemoryPool() {
+    /** Create and Initialize a memory pool.
+     *
+     * @note You cannot call this function from ISR context.
+    */
+    MemoryPool()
+    {
         memset(_pool_mem, 0, sizeof(_pool_mem));
         memset(&_obj_mem, 0, sizeof(_obj_mem));
-        memset(&_attr, 0, sizeof(_attr));
-        _attr.mp_mem = _pool_mem;
-        _attr.mp_size = sizeof(_pool_mem);
-        _attr.cb_mem = &_obj_mem;
-        _attr.cb_size = sizeof(_obj_mem);
-        _id = osMemoryPoolNew(pool_sz, sizeof(T), &_attr);
+        osMemoryPoolAttr_t attr = { 0 };
+        attr.mp_mem = _pool_mem;
+        attr.mp_size = sizeof(_pool_mem);
+        attr.cb_mem = &_obj_mem;
+        attr.cb_size = sizeof(_obj_mem);
+        _id = osMemoryPoolNew(pool_sz, sizeof(T), &attr);
         MBED_ASSERT(_id);
     }
 
-    /** Destroy a memory pool */
-    ~MemoryPool() {
+    /** Destroy a memory pool
+     *
+     * @note You cannot call this function from ISR context.
+    */
+    ~MemoryPool()
+    {
         osMemoryPoolDelete(_id);
     }
 
     /** Allocate a memory block of type T from a memory pool.
       @return  address of the allocated memory block or NULL in case of no memory available.
+
+      @note You may call this function from ISR context.
     */
-    T* alloc(void) {
-        return (T*)osMemoryPoolAlloc(_id, 0);
+    T *alloc(void)
+    {
+        return (T *)osMemoryPoolAlloc(_id, 0);
     }
 
     /** Allocate a memory block of type T from a memory pool and set memory block to zero.
       @return  address of the allocated memory block or NULL in case of no memory available.
+
+      @note You may call this function from ISR context.
     */
-    T* calloc(void) {
-        T *item = (T*)osMemoryPoolAlloc(_id, 0);
+    T *calloc(void)
+    {
+        T *item = (T *)osMemoryPoolAlloc(_id, 0);
         if (item != NULL) {
             memset(item, 0, sizeof(T));
         }
@@ -88,20 +106,23 @@ public:
                       is NULL or invalid, or osErrorResource if given memory block is in an
                       invalid memory pool state.
 
+      @note You may call this function from ISR context.
     */
-    osStatus free(T *block) {
-        return osMemoryPoolFree(_id, (void*)block);
+    osStatus free(T *block)
+    {
+        return osMemoryPoolFree(_id, (void *)block);
     }
 
 private:
     osMemoryPoolId_t             _id;
-    osMemoryPoolAttr_t           _attr;
     /* osMemoryPoolNew requires that pool block size is a multiple of 4 bytes. */
     char                         _pool_mem[((sizeof(T) + 3) & ~3) * pool_sz];
     mbed_rtos_storage_mem_pool_t _obj_mem;
 };
+/** @}*/
+/** @}*/
 
 }
 #endif
 
-/** @}*/
+

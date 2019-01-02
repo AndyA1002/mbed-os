@@ -130,7 +130,8 @@ uint32_t us_ticker_read()
 
 void us_ticker_fire_interrupt(void)
 {
-    NVIC_SetPendingIRQ(Tim0_IRQn);
+    us_ticker_target = 0;
+    NVIC_SetPendingIRQ(Tim1_IRQn);
 }
 
 /*******************************************************************************
@@ -201,4 +202,9 @@ void us_ticker_set_interrupt(timestamp_t timestamp)
 
     // we set the full reminder of 16 bit, the next ISR will do the upper part
     ticker_set(delta & 0xFFFF);
+}
+
+void us_ticker_free(void)
+{
+
 }

@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2017 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +28,11 @@ namespace mbed {
 class FileHandle;
 
 /** \addtogroup platform */
-
+/** @{*/
+/**
+ * \defgroup platform_poll poll functions
+ * @{
+ */
 
 struct pollfh {
     FileHandle *fh;
@@ -46,6 +51,10 @@ struct pollfh {
  * @return number of file handles selected (for which revents is non-zero). 0 if timed out with nothing selected. -1 for error.
  */
 int poll(pollfh fhs[], unsigned nfhs, int timeout);
+
+/**@}*/
+
+/**@}*/
 
 } // namespace mbed
 

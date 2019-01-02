@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2013 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,14 +24,17 @@
 
 namespace mbed {
 /** \addtogroup platform */
-
-
-/* Class FileLike
+/** @{*/
+/**
+ * \defgroup platform_FileLike FileLike class
+ * @{
+ */
+/** Class FileLike
+ *
  *  A file-like object is one that can be opened with fopen by
  *  fopen("/name", mode).
  *
  *  @note Synchronization level: Set by subclass
- *  @ingroup platform
  */
 class FileLike : public FileHandle, public FileBase, private NonCopyable<FileLike> {
 public:
@@ -42,6 +46,9 @@ public:
     virtual ~FileLike() {}
 };
 
+/**@}*/
+
+/**@}*/
 
 } // namespace mbed
 

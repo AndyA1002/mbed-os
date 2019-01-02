@@ -21,218 +21,143 @@
  */
 
 #include "rtos/rtos_idle.h"
-#include "platform/mbed_sleep.h"
+#include "platform/mbed_power_mgmt.h"
 #include "TimerEvent.h"
 #include "lp_ticker_api.h"
-#include "core_cm.h"
 #include "mbed_critical.h"
 #include "mbed_assert.h"
 #include <new>
 #include "rtx_os.h"
+
+/* Everything in rtx_lib.h, and provided by this file, has C linkage */
 extern "C" {
 #include "rtx_lib.h"
-}
 
-using namespace mbed;
+    using namespace mbed;
 
-#ifdef MBED_TICKLESS
+#if (defined(MBED_TICKLESS) && DEVICE_LPTICKER)
 
-#if (defined(NO_SYSTICK))
-/**
- * Return an IRQ number that can be used in the absence of SysTick
- *
- * @return Free IRQ number that can be used
- */
-extern "C" IRQn_Type mbed_get_m0_tick_irqn(void);
-#endif
+#include "rtos/TARGET_CORTEX/SysTimer.h"
 
-class RtosTimer : private TimerEvent {
-public:
-    RtosTimer(): TimerEvent(get_lp_ticker_data()), _start_time(0), _tick(0) {
-        _start_time = ticker_read_us(_ticker_data);
-#if (defined(NO_SYSTICK))
-        NVIC_SetVector(mbed_get_m0_tick_irqn(), (uint32_t)SysTick_Handler);
-        NVIC_SetPriority(mbed_get_m0_tick_irqn(), 0xFF); /* RTOS requires lowest priority */
-        NVIC_EnableIRQ(mbed_get_m0_tick_irqn());
-#else
-        // Ensure SysTick has the correct priority as it is still used
-        // to trigger software interrupts on each tick. The period does
-        // not matter since it will never start counting.
-        SysTick_Setup(16);
-#endif
-    };
+    static rtos::internal::SysTimer *os_timer;
+    static uint64_t os_timer_data[sizeof(rtos::internal::SysTimer) / 8];
 
-    /**
-     * Schedule an os tick to fire
-     *
-     * @param delta Tick to fire at relative to current tick
-     */
-    void schedule_tick(uint32_t delta=1) {
-        insert_absolute(_start_time + (_tick + delta) * 1000000 /  OS_TICK_FREQ);
-    }
-
-
-    /**
-     * Prevent any scheduled ticks from triggering
-     */
-    void cancel_tick() {
-        remove();
-    }
-
-    /**
-     * Get the current tick count
-     *
-     * @return The number of ticks since boot. This should match RTX's tick count
-     */
-    uint32_t get_tick() {
-        return _tick & 0xFFFFFFFF;
-    }
-
-    /**
-     * Update the internal tick count
-     *
-     * @return The number of ticks incremented
-     */
-    uint32_t update_tick() {
-        uint64_t new_tick = ticker_read_us(_ticker_data) * OS_TICK_FREQ / 1000000;
-        if (new_tick > _tick) {
-            // Don't update to the current tick. Instead, update to the
-            // previous tick and let the SysTick handler increment it
-            // to the current value. This allows scheduling restart
-            // successfully after the OS is resumed.
-            new_tick--;
+    // Enable System Timer.
+    void OS_Tick_Enable(void)
+    {
+        // Do not use SingletonPtr since this relies on the RTOS
+        if (NULL == os_timer) {
+            os_timer = new (os_timer_data) rtos::internal::SysTimer();
+            os_timer->setup_irq();
         }
-        uint32_t elapsed_ticks = new_tick - _tick;
-        _tick = new_tick;
-        return elapsed_ticks;
+
+        // set to fire interrupt on next tick
+        os_timer->schedule_tick();
     }
 
-    /**
-     * Get the time
-     *
-     * @return Current time in microseconds
-     */
-    us_timestamp_t get_time() {
-        return ticker_read_us(_ticker_data);
+    // Disable System Timer.
+    void OS_Tick_Disable(void)
+    {
+        os_timer->cancel_tick();
     }
 
-    ~RtosTimer() {
+    // Acknowledge System Timer IRQ.
+    void OS_Tick_AcknowledgeIRQ(void)
+    {
 
-    };
+    }
 
-protected:
+    // Get System Timer count.
+    uint32_t OS_Tick_GetCount(void)
+    {
+        return os_timer->get_time() & 0xFFFFFFFF;
+    }
 
-    void handler() {
-#if (defined(NO_SYSTICK))
-        NVIC_SetPendingIRQ(mbed_get_m0_tick_irqn());
+    // Get OS Tick IRQ number.
+    int32_t  OS_Tick_GetIRQn(void)
+    {
+        return -1;
+    }
+
+    // Get OS Tick overflow status.
+    uint32_t OS_Tick_GetOverflow(void)
+    {
+        return 0;
+    }
+
+    // Get OS Tick interval.
+    uint32_t OS_Tick_GetInterval(void)
+    {
+        return 1000;
+    }
+
+    static void default_idle_hook(void)
+    {
+        uint32_t ticks_to_sleep = osKernelSuspend();
+        const bool block_deep_sleep = ticks_to_sleep <= MBED_CONF_TARGET_DEEP_SLEEP_LATENCY;
+
+        if (block_deep_sleep) {
+            sleep_manager_lock_deep_sleep();
+        } else {
+            ticks_to_sleep -= MBED_CONF_TARGET_DEEP_SLEEP_LATENCY;
+        }
+        os_timer->suspend(ticks_to_sleep);
+
+        bool event_pending = false;
+        while (!os_timer->suspend_time_passed() && !event_pending) {
+
+            core_util_critical_section_enter();
+            if (osRtxInfo.kernel.pendSV) {
+                event_pending = true;
+            } else {
+                sleep();
+            }
+            core_util_critical_section_exit();
+
+            // Ensure interrupts get a chance to fire
+            __ISB();
+        }
+
+        if (block_deep_sleep) {
+            sleep_manager_unlock_deep_sleep();
+        }
+
+        osKernelResume(os_timer->resume());
+    }
+
+
 #else
-        SCB->ICSR = SCB_ICSR_PENDSTSET_Msk;
-#endif
-        _tick++;
-    }
 
-    us_timestamp_t _start_time;
-    uint64_t _tick;
-};
-
-static RtosTimer *os_timer;
-static uint64_t os_timer_data[sizeof(RtosTimer) / 8];
-
-/// Setup System Timer.
-int32_t osRtxSysTimerSetup (void)
-{
-    // Do not use SingletonPtr since this relies on the RTOS
-    if (NULL == os_timer) {
-        os_timer = new (os_timer_data) RtosTimer();
-    }
-    return -1;
-}
-
-/// Enable System Timer.
-void osRtxSysTimerEnable (void)
-{
-    // set to fire interrupt on next tick
-    os_timer->schedule_tick();
-}
-
-/// Disable System Timer.
-void osRtxSysTimerDisable (void)
-{
-    os_timer->cancel_tick();
-}
-
-/// Acknowledge System Timer IRQ.
-void osRtxSysTimerAckIRQ (void)
-{
-    os_timer->schedule_tick();
-}
-
-/// Get System Timer count.
-uint32_t osRtxSysTimerGetCount (void)
-{
-    return os_timer->get_time() & 0xFFFFFFFF;
-}
-
-static void default_idle_hook(void)
-{
-    uint32_t elapsed_ticks = 0;
-
-    core_util_critical_section_enter();
-    uint32_t ticks_to_sleep = svcRtxKernelSuspend();
-    MBED_ASSERT(os_timer->get_tick() == svcRtxKernelGetTickCount());
-    if (ticks_to_sleep) {
-        os_timer->schedule_tick(ticks_to_sleep);
-
+    static void default_idle_hook(void)
+    {
+        // critical section to complete sleep with locked deepsleep
+        core_util_critical_section_enter();
         sleep_manager_lock_deep_sleep();
         sleep();
         sleep_manager_unlock_deep_sleep();
-
-        os_timer->cancel_tick();
-        // calculate how long we slept
-        elapsed_ticks = os_timer->update_tick();
+        core_util_critical_section_exit();
     }
-    svcRtxKernelResume(elapsed_ticks);
-    core_util_critical_section_exit();
-}
 
-#elif defined(FEATURE_UVISOR)
+#endif // (defined(MBED_TICKLESS) && DEVICE_LPTICKER)
 
-static void default_idle_hook(void)
-{
-    /* uVisor can't sleep. See <https://github.com/ARMmbed/uvisor/issues/420>
-     * for details. */
-}
+    static void (*idle_hook_fptr)(void) = &default_idle_hook;
 
-#else
-
-static void default_idle_hook(void)
-{
-    // critical section to complete sleep with locked deepsleep
-    core_util_critical_section_enter();
-    sleep_manager_lock_deep_sleep();
-    sleep();
-    sleep_manager_unlock_deep_sleep();
-    core_util_critical_section_exit();
-}
-
-#endif // MBED_TICKLESS
-
-static void (*idle_hook_fptr)(void) = &default_idle_hook;
-
-void rtos_attach_idle_hook(void (*fptr)(void))
-{
-    //Attach the specified idle hook, or the default idle hook in case of a NULL pointer
-    if (fptr != NULL) {
-        idle_hook_fptr = fptr;
-    } else {
-        idle_hook_fptr = default_idle_hook;
+    void rtos_attach_idle_hook(void (*fptr)(void))
+    {
+        //Attach the specified idle hook, or the default idle hook in case of a NULL pointer
+        if (fptr != NULL) {
+            idle_hook_fptr = fptr;
+        } else {
+            idle_hook_fptr = default_idle_hook;
+        }
     }
-}
 
-extern "C" void rtos_idle_loop(void)
-{
-    //Continuously call the idle hook function pointer
-    while (1) {
-        idle_hook_fptr();
+    MBED_NORETURN void rtos_idle_loop(void)
+    {
+        //Continuously call the idle hook function pointer
+        while (1) {
+            idle_hook_fptr();
+        }
     }
-}
+
+} // extern "C"
